@@ -167,6 +167,7 @@ The agent reads configuration from environment variables:
 | `AGENT_LOG_LEVEL` | `DEBUG` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `AGENT_CTX_BUDGET` | `245000` | Token budget for context window |
 | `AGENT_HEARTBEAT_INTERVAL` | `1800` | Health check interval (seconds) |
+| `TAVILY_API_KEY` | *(optional)* | When set, activates Tavily as the web search backend instead of DuckDuckGo. Install `unigent[search]` to enable. |
 
 ## 📁 Core Files
 

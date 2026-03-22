@@ -1401,6 +1401,7 @@ class TavilyWebSearch:
             self._client = TavilyClient()
         except ImportError:
             self._client = None
+        self._fetcher = SecureWebSearch()
 
     def search(self, query: str, max_results: int = 5) -> list[dict[str, Any]]:
         if self._client is None:
@@ -1421,6 +1422,10 @@ class TavilyWebSearch:
             return results or [{"snippet": "No results", "url": ""}]
         except Exception as e:
             return [{"snippet": f"Tavily search error: {e}", "url": ""}]
+
+    def fetch(self, url: str, max_chars: int | None = None) -> str:
+        """Delegate URL fetching to SecureWebSearch (Tavily is search-only)."""
+        return self._fetcher.fetch(url, max_chars)
 
 
 print("✓ Core components ready (Memory, Diff, Code Exec, Web)")
