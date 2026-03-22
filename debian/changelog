@@ -1,30 +1,48 @@
-unigent (0.4.0) UNRELEASED; urgency=medium
+unigent (0.5.0-1) UNRELEASED; urgency=medium
 
-  * Added: Cost tracking via Config.MODEL_COSTS and APICounter cost_usd.
-  * Added: APICounter persistence methods (persist_stats, load_historical).
-  * Added: Enhanced retry_api decorator with Retry-After support and jitter.
-  * Added: Per-tool timeout overrides via Config.TOOL_TIMEOUTS.
-  * Added: Config.cost_for() and tool_timeout() helper methods.
-  * Changed: Agent initializes APICounter with Config.cost_for.
-  * Changed: HEARTBEAT_INTERVAL now clamped to [60, 21600] seconds.
-  * Added: Comprehensive tests for costing, retry, and persistence.
-  * Fixed: Config class indentation and module-level execution.
-  * Fixed: Duplicate imports and staticmethod patch errors.
+      * Major feature update from Colab v2:
+      * - browser_fetch: Fetch JS-rendered web pages via Playwright
+      * - send_email: SMTP email sending with TLS
+      * - memory_semantic_search: TF-IDF semantic search with sklearn
+      * - export_conversation: Export history to md/json/html
+      * - structured_query: Get JSON responses from model
+      * - workspace_diff: Track file changes since session start
+      * - cancel_task: Cancel running queued tasks
+      * - Added semantic_search() to EfficientMemory with TF-IDF
+      * Updated README.md with SEO optimization for all features
+      * Fixed CI/CD PyInstaller command (script path instead of -m)
+      * All tests pass (15/15)
 
- -- root <root@ unknown>  Wed, 20 Mar 2026 12:00:00 +0000
+     -- root <root@ unknown>  Sat, 22 Mar 2026 20:30:00 +0000
 
-unigent (0.2.0) UNRELEASED; urgency=medium
+    unigent (0.4.0) UNRELEASED; urgency=medium
 
-  * Added CoreEvolutionManager for dynamic core file evolution
-  * Added cross-platform support (Linux, macOS, Windows)
-  * Fixed Windows compatibility (resource, preexec_fn)
-  * Fixed CI artifact path (dist/*.deb)
-  * Added import shutil fix
+      * Added: Cost tracking via Config.MODEL_COSTS and APICounter cost_usd.
+      * Added: APICounter persistence methods (persist_stats, load_historical).
+      * Added: Enhanced retry_api decorator with Retry-After support and jitter.
+      * Added: Per-tool timeout overrides via Config.TOOL_TIMEOUTS.
+      * Added: Config.cost_for() and tool_timeout() helper methods.
+      * Changed: Agent initializes APICounter with Config.cost_for.
+      * Changed: HEARTBEAT_INTERVAL now clamped to [60, 21600] seconds.
+      * Added: Comprehensive tests for costing, retry, and persistence.
+      * Fixed: Config class indentation and module-level execution.
+      * Fixed: Duplicate imports and staticmethod patch errors.
 
- -- root <root@6211f3bf64da>  Wed, 18 Mar 2026 20:50:00 +0000
+     -- root <root@ unknown>  Wed, 20 Mar 2026 12:00:00 +0000
 
-unigent (0.1.0) UNRELEASED; urgency=medium
+    unigent (0.2.0) UNRELEASED; urgency=medium
 
-  * Initial release.
+      * Added CoreEvolutionManager for dynamic core file evolution
+      * Added cross-platform support (Linux, macOS, Windows)
+      * Fixed Windows compatibility (resource, preexec_fn)
+      * Fixed CI artifact path (dist/*.deb)
+      * Added import shutil fix
 
- -- root <root@6211f3bf64da>  Wed, 18 Mar 2026 20:03:31 +0000
+     -- root <root@6211f3bf64da>  Wed, 18 Mar 2026 20:50:00 +0000
+
+    unigent (0.1.0) UNRELEASED; urgency=medium
+
+      * Initial release.
+
+     -- root <root@6211f3bf64da>  Wed, 18 Mar 2026 20:03:31 +0000
+    
