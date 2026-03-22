@@ -8,7 +8,7 @@ SEO: autonomous AI agent, NVIDIA NIM, streaming responses, persistent memory, fi
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Debian Package](https://img.shields.io/badge/Debian-0.4.0-blue?logo=debian)](https://github.com/unn-Known1/unigent/releases)
+[![Debian Package](https://img.shields.io/badge/Debian-0.5.0-blue?logo=debian)](https://github.com/unn-Known1/unigent/releases)
 [![GitHub issues](https://img.shields.io/github/issues/unn-Known1/unigent.svg)](https://github.com/unn-Known1/unigent/issues)
 [![GitHub last commit](https://img.shields.io/github/last-commit/unn-Known1/unigent.svg)](https://github.com/unn-Known1/unigent/commits)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)

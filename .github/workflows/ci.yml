@@ -70,7 +70,7 @@ jobs:
 
     - name: Build executable with PyInstaller
       run: |
-        pyinstaller --onefile --name unigent -m unigent.agent
+        pyinstaller --onefile --name unigent src/unigent/agent.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
