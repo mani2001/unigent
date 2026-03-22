@@ -1045,6 +1045,38 @@ class EfficientMemory:
         result: dict[str, Any] = {}
         for k, v in self._data.items():
             hay = f"{k} {v.get('value', '')}".lower()
+    def semantic_search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        """
+        TF-IDF semantic search over all memory values.
+        Returns list of {key, value, score} dicts sorted by relevance.
+        Falls back to fuzzy keyword search if sklearn not installed.
+        """
+        if not self._data:
+            return []
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+            import numpy as np
+
+            keys = list(self._data.keys())
+            docs = [f"{k} {self._data[k].get('value', '')}" for k in keys]
+            corpus = docs + [query]
+
+            vec = TfidfVectorizer(stop_words="english", min_df=1)
+            tfidf = vec.fit_transform(corpus)
+            q_vec = tfidf[-1]
+            scores = cosine_similarity(q_vec, tfidf[:-1]).flatten()
+
+            top_idx = np.argsort(scores)[::-1][:top_k]
+            return [
+                {"key": keys[i], "value": self._data[keys[i]]["value"], "score": float(scores[i])}
+                for i in top_idx if scores[i] > 0.0
+            ]
+        except ImportError:
+            # sklearn not available — fall back to keyword search
+            kw_results = self.search(query, fuzzy=True)
+            return [{"key": k, "value": v, "score": 1.0} for k, v in list(kw_results.items())[:top_k]]
+
             if q in hay or (fuzzy and all(w in hay for w in words)):
                 result[k] = v["value"]
         return result
@@ -2646,6 +2678,21 @@ Always think before you act. For complex multi-step tasks use the todo list:
             "diff_apply":        lambda: self.differ.apply(inp["path"], inp["diff"]),
             # Web
             "web_search":        lambda: self.web.search(inp["query"], inp.get("max_results", 5)),
+            # New Tools from v2
+            "browser_fetch": lambda: self._browser_fetch(
+                inp.get("url", ""), inp.get("wait_for", ""), inp.get("max_chars", 8000)),
+            "send_email": lambda: self._send_email(
+                inp.get("to", ""), inp.get("subject", ""), inp.get("body", ""),
+                inp.get("cc", ""), inp.get("html", False)),
+            "memory_semantic_search": lambda: self.mem.semantic_search(
+                inp.get("query", ""), inp.get("top_k", 5)),
+            "export_conversation": lambda: self.export_conversation(
+                inp.get("fmt", "md"), inp.get("path")),
+            "structured_query": lambda: self.structured_query(
+                inp.get("prompt", ""), inp.get("schema_desc", ""), inp.get("max_tokens", 2000)),
+            "workspace_diff": lambda: self._workspace_diff(),
+            "cancel_task": lambda: self._cancel_running_task(),
+
             "web_fetch":         lambda: self.web.fetch(inp["url"], inp.get("max_chars", Config.MAX_WEB_CONTENT)),
             # Sub-tools
             "subtool_create":    lambda: t.create(inp["name"], inp["description"],
@@ -3430,6 +3477,189 @@ Always think before you act. For complex multi-step tasks use the todo list:
         """Clear conversation history."""
         self.history = []
 
+    # ── Browser Fetch (JS-rendered pages) ─────────────────────────────────
+    def _browser_fetch(self, url: str, wait_for: str = "", max_chars: int = 8000) -> str:
+        """Fetch a JS-rendered page using playwright (auto-installs if missing)."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.shell.run("pip install -q playwright && playwright install chromium")
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            return "Error: playwright installation failed. Run: pip install playwright && playwright install chromium"
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.goto(url, timeout=Config.tool_timeout("browser_fetch") * 1000)
+                if wait_for:
+                    page.wait_for_selector(wait_for, timeout=10000)
+                content = page.inner_text("body")
+                browser.close()
+                text = re.sub(r'\s+', ' ', content).strip()
+                return text[:max_chars] + ("…(truncated)" if len(text) > max_chars else "")
+        except Exception as e:
+            return f"Browser fetch error: {e}"
+
+    # ── Email (SMTP) ───────────────────────────────────────────────────────
+    def _send_email(self, to: str, subject: str, body: str,
+                    cc: str = "", html: bool = False) -> str:
+        """Send email via SMTP. Reads credentials from env/Colab Secrets."""
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+
+        smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        smtp_user = os.environ.get("SMTP_USER", "")
+        smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+
+        if not smtp_user or not smtp_pass:
+            return ("Error: SMTP credentials not configured.\n"
+                    "Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD in env/Colab Secrets.")
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["From"] = smtp_user
+            msg["To"] = to
+            msg["Subject"] = subject
+            if cc:
+                msg["Cc"] = cc
+            msg.attach(MIMEText(body, "html" if html else "plain"))
+            with smtplib.SMTP(smtp_host, smtp_port) as s:
+                s.starttls()
+                s.login(smtp_user, smtp_pass)
+                recipients = [to] + ([cc] if cc else [])
+                s.sendmail(smtp_user, recipients, msg.as_string())
+            return f"✓ Email sent to {to}"
+        except Exception as e:
+            return f"Email error: {e}"
+
+    # ── Workspace Diff ─────────────────────────────────────────────────────
+    def _workspace_diff(self) -> str:
+        """Show files changed since this agent session started."""
+        try:
+            snap_key = "_workspace_snapshot"
+            current: dict[str, str] = {}
+            for f in Config.FILES_DIR.rglob("*"):
+                if f.is_file() and not f.name.startswith("."):
+                    try:
+                        rel = str(f.relative_to(Config.FILES_DIR))
+                        current[rel] = f"{f.stat().st_size}:{f.stat().st_mtime:.0f}"
+                    except Exception:
+                        pass
+
+            snapshot = self.mem.get(snap_key) or {}
+            if not snapshot:
+                self.mem.save(snap_key, current, tag="system")
+                return "Workspace snapshot taken. Run again after changes to see diff."
+
+            added = [k for k in current if k not in snapshot]
+            deleted = [k for k in snapshot if k not in current]
+            modified = [k for k in current if k in snapshot and current[k] != snapshot[k]]
+
+            lines = [f"📊 Workspace diff since session start:"]
+            if added: lines.append(f" ➕ Added ({len(added)}): " + ", ".join(added[:20]))
+            if modified: lines.append(f" ✏️ Modified ({len(modified)}): " + ", ".join(modified[:20]))
+            if deleted: lines.append(f" ❌ Deleted ({len(deleted)}): " + ", ".join(deleted[:20]))
+            if not (added or modified or deleted):
+                lines.append(" No changes detected.")
+
+            # Update snapshot
+            self.mem.save(snap_key, current, tag="system")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Workspace diff error: {e}"
+
+    # ── Cancel Task ─────────────────────────────────────────────────────────
+    def _cancel_running_task(self) -> str:
+        """Set the cancellation flag so the next run() iteration aborts."""
+        self._cancel_flag = True
+        return "🛑 Cancellation flag set — current task will stop at next iteration boundary."
+
+    # ── Export Conversation ─────────────────────────────────────────────────
+    def export_conversation(
+        self,
+        fmt: str = "md",
+        path: str | None = None,
+    ) -> str:
+        """Export the full conversation history to a readable file."""
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ext = {".md": ".md", ".json": ".json", ".html": ".html"}.get(fmt, ".md")
+        dest = Path(path) if path else Config.FILES_DIR / f"conversation_{ts}{ext}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        if fmt == "json":
+            dest.write_text(json.dumps(self.history, indent=2, default=str), encoding="utf-8")
+        elif fmt == "html":
+            rows = []
+            for msg in self.history:
+                role = msg.get("role", "")
+                content = msg.get("content") or ""
+                if isinstance(content, list):
+                    content = " ".join(p.get("text","") for p in content if isinstance(p,dict))
+                color = {"user":"#1a3a6a","assistant":"#1a4a2a","tool":"#3a2a0a"}.get(role,"#222")
+                rows.append(
+                    f'<div style="background:{color};padding:10px;margin:4px 0;border-radius:6px;'
+                    f'font-family:monospace;white-space:pre-wrap">'
+                    f'<b style="color:#aaa">{role.upper()}</b><br>{str(content)[:5000]}</div>'
+                )
+            html = (
+                f'<!DOCTYPE html><html><head><meta charset="utf-8">'
+                f'<title>Conversation {ts}</title>'
+                f'<style>body{{background:#0d0f12;color:#d4dae8;margin:20px}}</style>'
+                f'</head><body>{"".join(rows)}</body></html>'
+            )
+            dest.write_text(html, encoding="utf-8")
+        else:  # Markdown
+            lines = [f"# Conversation Export — {ts}\n"]
+            for msg in self.history:
+                role = msg.get("role","")
+                content = msg.get("content") or ""
+                if isinstance(content, list):
+                    content = " ".join(p.get("text","") for p in content if isinstance(p,dict))
+                tcs = msg.get("tool_calls", [])
+                lines.append(f"## {role.upper()}")
+                lines.append(str(content)[:5000])
+                if tcs:
+                    lines.append(f"*Tool calls: {', '.join(tc['function']['name'] for tc in tcs)}*")
+                lines.append("")
+            dest.write_text("".join(lines), encoding="utf-8")
+
+        self._log(f"Conversation exported → {dest}", "system")
+        return str(dest)
+
+    # ── Structured Query ───────────────────────────────────────────────────
+    def structured_query(
+        self,
+        prompt: str,
+        schema_desc: str = "Return valid JSON only.",
+        max_tokens: int = 2000,
+    ) -> str:
+        """Ask the model a question and get back a structured JSON response."""
+        try:
+            client = OpenAI(base_url=Config.BASE_URL, api_key=os.environ.get("NVIDIA_API_KEY"))
+            response = client.chat.completions.create(
+                model=Config.MODEL,
+                messages=[
+                    {"role": "system", "content": f"You must respond with valid JSON only. {schema_desc}"},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=max_tokens,
+                temperature=0.1,
+            )
+            content = response.choices[0].message.content
+            if content:
+                # Try to parse and re-format
+                try:
+                    parsed = json.loads(content)
+                    return json.dumps(parsed, indent=2, default=str)
+                except json.JSONDecodeError:
+                    return content
+            return "No response content"
+        except Exception as e:
+            return f"Structured query error: {e}"
+
 
 print("✓ Agent class defined")
 
@@ -3522,8 +3752,15 @@ TOOLS: list[dict] = [
           _params(["query"], query=_S,
                   max_results={"type": _I, "default": 5, "minimum": 1, "maximum": 10})),
     _tool("web_fetch", "Fetch and extract text from any http/https URL.",
+    _tool("web_fetch", "Fetch and extract text from any http/https URL.",
           _params(["url"], url=_S,
                   max_chars={"type": _I, "default": 5000, "minimum": 100, "maximum": 10000})),
+          _params(None, fmt={"type": _S, "default": "md"}, path={"type": _S, "default": ""})),
+    _tool("structured_query", "Ask the model a question and get back a structured JSON response.",
+          _params(["prompt"], prompt=_S, schema_desc={"type": _S, "default": "Return valid JSON only."}, max_tokens={"type": _I, "default": 2000})),
+    _tool("workspace_diff", "Show files changed since session start (added/modified/deleted)."),
+    _tool("cancel_task", "Cancel the currently-running queued task."),
+
 
     # Sub-tools
     _tool("subtool_create",
