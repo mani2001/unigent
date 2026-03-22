@@ -1392,6 +1392,37 @@ class SecureWebSearch:
             return f"Fetch error: {e}"
 
 
+class TavilyWebSearch:
+    """Tavily-powered web search backend (activated when TAVILY_API_KEY is set)."""
+
+    def __init__(self) -> None:
+        try:
+            from tavily import TavilyClient
+            self._client = TavilyClient()
+        except ImportError:
+            self._client = None
+
+    def search(self, query: str, max_results: int = 5) -> list[dict[str, Any]]:
+        if self._client is None:
+            return [{"snippet": "Error: tavily-python not installed. Install with: pip install tavily-python", "url": ""}]
+        try:
+            response = self._client.search(
+                query=query,
+                max_results=max_results,
+                search_depth="basic",
+            )
+            results: list[dict[str, Any]] = []
+            for r in response.get("results", [])[:max_results]:
+                results.append({
+                    "title":   (r.get("title") or query)[:100],
+                    "snippet": (r.get("content") or "")[:300],
+                    "url":     r.get("url", ""),
+                })
+            return results or [{"snippet": "No results", "url": ""}]
+        except Exception as e:
+            return [{"snippet": f"Tavily search error: {e}", "url": ""}]
+
+
 print("✓ Core components ready (Memory, Diff, Code Exec, Web)")
 
 class CachedSubtools:
@@ -2547,7 +2578,7 @@ Always think before you act. For complex multi-step tasks use the todo list:
         self.tools_store = CachedSubtools()
         self.files       = SecureFiles()
         self.code        = SecureCodeExecutor()
-        self.web         = SecureWebSearch()
+        self.web         = TavilyWebSearch() if os.environ.get("TAVILY_API_KEY") else SecureWebSearch()
         self.shell       = ShellRunner()
         self.differ      = DiffApplier()
         self.rate_limiter = RateLimiter()
@@ -3748,7 +3779,7 @@ TOOLS: list[dict] = [
           _params(["path", "diff"], path=_S, diff=_S)),
 
     # Web
-    _tool("web_search", "Search the web via DuckDuckGo.",
+    _tool("web_search", "Search the web. Uses Tavily when TAVILY_API_KEY is set, otherwise DuckDuckGo.",
           _params(["query"], query=_S,
                   max_results={"type": _I, "default": 5, "minimum": 1, "maximum": 10})),
     _tool("web_fetch", "Fetch and extract text from any http/https URL.",
